@@ -1,0 +1,21 @@
+# Список чатов для индексации
+# Для изменения - редактируем файл и делаем commit
+#
+# Можно указывать чаты двумя способами:
+# 1. По username: username: baraholka_tbi
+# 2. По ID: id: -1001234567890
+# Если указаны оба - используется id (более надёжно)
+
+default_chats:
+  - username: baraholka_tbi
+    name: "Барахолка Тбилиси"
+    # id: -1001234567890  # Опционально - раскомментируйте и укажите реальный ID
+  - username: avito_baraholka_tbilisi
+    name: "Барахолка ТБИЛИСИ"
+  - username: baraholka_tbilisi_home
+    name: "БАРАХОЛКА ТБИЛИСИ M & S"
+
+settings:
+  default_days: 7
+  max_days: 30
+  index_cache_minutes: 60

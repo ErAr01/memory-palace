@@ -1,0 +1,7 @@
+# Environment
+.env
+.env.local
+
+# Telegram session
+*.session
+*.session-journal
