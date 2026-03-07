@@ -85,7 +85,7 @@ class IndexingService:
                         continue
                 
                 chat_username = await self.indexer.get_chat_username(chat)
-                count = await self._index_chat(chat, chat_id, chat_username, days)
+                count = await self._index_chat(chat, chat_id, chat_username, days, force=force)
                 results[display_name] = count
                 
             except Exception as e:
@@ -100,18 +100,25 @@ class IndexingService:
         chat_id: int,
         chat_username: str | None,
         days: int,
+        force: bool = False,
     ) -> int:
         """
         Index a single chat with smart incremental loading.
         
         Only fetches messages for time ranges that haven't been indexed yet.
+        If force=True, fetches the entire period regardless of cached status.
         """
         display_name = chat.display_name
         to_date = datetime.utcnow()
         from_date = to_date - timedelta(days=days)
         
-        status = await self.status_repo.get_status(chat_id)
-        missing_ranges = self.status_repo.get_missing_ranges(status, from_date, to_date)
+        if force:
+            # Force full reindex - use entire requested period
+            missing_ranges = [(from_date, to_date)]
+            logger.info(f"[DEBUG-a294c4] FORCE reindex {display_name}: full period from {from_date} to {to_date}")
+        else:
+            status = await self.status_repo.get_status(chat_id)
+            missing_ranges = self.status_repo.get_missing_ranges(status, from_date, to_date)
         
         if not missing_ranges:
             logger.info(f"Skipping {display_name}: all data already indexed for requested period")
