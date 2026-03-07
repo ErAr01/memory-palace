@@ -129,6 +129,11 @@ class TelegramIndexer:
             chat_username = chat_username or chat.username
         
         messages = []
+        # #region agent log
+        total_iterated = 0
+        skipped_no_text = 0
+        chapman_found = False
+        # #endregion
 
         try:
             async for message in self.client.iter_messages(
@@ -137,7 +142,17 @@ class TelegramIndexer:
                 offset_date=to_date,
                 reverse=False,
             ):
+                # #region agent log
+                total_iterated += 1
+                if message.text and 'chapman' in message.text.lower():
+                    chapman_found = True
+                    logger.info(f"[DEBUG-a294c4] FOUND CHAPMAN! msg_id={message.id}, date={message.date}, text={message.text[:200]}")
+                # #endregion
+                
                 if message.text is None or len(message.text.strip()) == 0:
+                    # #region agent log
+                    skipped_no_text += 1
+                    # #endregion
                     continue
 
                 if from_date and message.date.replace(tzinfo=None) < from_date:
@@ -156,6 +171,9 @@ class TelegramIndexer:
                 })
 
             display = chat.display_name if isinstance(chat, ChatIdentifier) else str(chat)
+            # #region agent log
+            logger.info(f"[DEBUG-a294c4] fetch_messages stats: total_iterated={total_iterated}, skipped_no_text={skipped_no_text}, chapman_found={chapman_found}")
+            # #endregion
             logger.info(
                 f"Fetched {len(messages)} messages from {display} "
                 f"(from {from_date} to {to_date})"
