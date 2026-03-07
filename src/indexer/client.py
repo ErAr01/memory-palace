@@ -13,7 +13,7 @@ class TelegramIndexer:
     def __init__(self):
         settings = get_settings()
         self.client = TelegramClient(
-            "userbot_session",
+            "userbot",
             settings.api_id,
             settings.api_hash,
         )
