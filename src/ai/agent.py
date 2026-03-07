@@ -121,6 +121,9 @@ class SearchAgent:
             )
         
         chats = parsed.chats or self.config.get_chat_identifiers()
+        # #region agent log
+        logger.info(f"[DEBUG-a294c4] Search params: search_query={parsed.search_query}, days={parsed.days}, chats={[c.display_name for c in chats]}")
+        # #endregion
         
         await self.indexing_service.index_chats(
             chats=chats,
@@ -133,6 +136,11 @@ class SearchAgent:
             chats=chats,
             days=parsed.days,
         )
+        # #region agent log
+        logger.info(f"[DEBUG-a294c4] _search_messages returned {len(messages)} messages")
+        for m in messages[:10]:
+            logger.info(f"[DEBUG-a294c4] Message id={m.id}, chat={m.chat_username}, date={m.date}, text={m.text[:100] if m.text else 'None'}...")
+        # #endregion
         
         if not messages:
             return SearchResult(
@@ -194,6 +202,9 @@ class SearchAgent:
             if chat_id:
                 chat_ids.append(chat_id)
         
+        # #region agent log
+        logger.info(f"[DEBUG-a294c4] _search_messages: chat_ids={chat_ids}, from_date={from_date}")
+        # #endregion
         messages = await self.message_repo.search_similar(
             embedding=query_embedding,
             chat_ids=chat_ids if chat_ids else None,
@@ -235,6 +246,9 @@ class SearchAgent:
             
             result = json.loads(response.choices[0].message.content)
             relevant_ids = set(result.get("relevant_ids", []))
+            # #region agent log
+            logger.info(f"[DEBUG-a294c4] _filter_relevant_messages: input_ids={[m.id for m in messages]}, relevant_ids={relevant_ids}, summary={result.get('summary')}")
+            # #endregion
             
             return [m for m in messages if m.id in relevant_ids]
             

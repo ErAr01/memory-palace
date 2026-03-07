@@ -100,6 +100,9 @@ async def parse_user_query(
         if chats_raw:
             chats = [parse_chat_identifier(c) for c in chats_raw]
         
+        # #region agent log
+        logger.info(f"[DEBUG-a294c4] Parsed query: search_query={result.get('search_query')}, days={days}, chats={chats_raw}, status={result.get('status')}")
+        # #endregion
         return ParsedQuery(
             status=result.get("status", "ready"),
             search_query=result.get("search_query"),
