@@ -140,6 +140,16 @@ class SearchAgent:
         logger.info(f"[DEBUG-a294c4] _search_messages returned {len(messages)} messages")
         for m in messages[:10]:
             logger.info(f"[DEBUG-a294c4] Message id={m.id}, chat={m.chat_username}, date={m.date}, text={m.text[:100] if m.text else 'None'}...")
+        # Search for "chapman" directly in DB
+        from sqlalchemy import select
+        from src.database.models import Message
+        chapman_result = await self.session.execute(
+            select(Message).where(Message.text.ilike('%chapman%'))
+        )
+        chapman_msgs = list(chapman_result.scalars().all())
+        logger.info(f"[DEBUG-a294c4] Direct DB search for 'chapman': found {len(chapman_msgs)} messages")
+        for cm in chapman_msgs[:5]:
+            logger.info(f"[DEBUG-a294c4] Chapman msg: id={cm.id}, chat={cm.chat_username}, date={cm.date}, text={cm.text[:100] if cm.text else 'None'}...")
         # #endregion
         
         if not messages:
@@ -204,6 +214,15 @@ class SearchAgent:
         
         # #region agent log
         logger.info(f"[DEBUG-a294c4] _search_messages: chat_ids={chat_ids}, from_date={from_date}")
+        # Check total messages in DB for first chat
+        if chat_ids:
+            from sqlalchemy import select, func
+            from src.database.models import Message
+            count_result = await self.session.execute(
+                select(func.count(Message.id)).where(Message.chat_id == chat_ids[0]).where(Message.date >= from_date)
+            )
+            total_count = count_result.scalar()
+            logger.info(f"[DEBUG-a294c4] Total messages in DB for chat_id={chat_ids[0]} since {from_date}: {total_count}")
         # #endregion
         messages = await self.message_repo.search_similar(
             embedding=query_embedding,
