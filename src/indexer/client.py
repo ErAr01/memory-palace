@@ -100,7 +100,7 @@ class TelegramIndexer:
         chat: ChatIdentifier | str | int,
         from_date: datetime | None = None,
         to_date: datetime | None = None,
-        limit: int = 1000,
+        limit: int | None = None,
     ) -> list[dict]:
         """
         Fetch messages from a chat within date range.
