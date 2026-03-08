@@ -100,7 +100,7 @@ class TelegramIndexer:
         chat: ChatIdentifier | str | int,
         from_date: datetime | None = None,
         to_date: datetime | None = None,
-        limit: int = 10000,
+        limit: int | None = None,
     ) -> list[dict]:
         """
         Fetch messages from a chat within date range.
@@ -109,7 +109,7 @@ class TelegramIndexer:
             chat: ChatIdentifier object, username string, or chat ID integer
             from_date: Start date for message retrieval
             to_date: End date for message retrieval
-            limit: Maximum number of messages to fetch
+            limit: Maximum number of messages to fetch (None = no limit)
             
         Returns:
             List of message dicts ready for database insertion.
@@ -129,11 +129,6 @@ class TelegramIndexer:
             chat_username = chat_username or chat.username
         
         messages = []
-        # #region agent log
-        total_iterated = 0
-        skipped_no_text = 0
-        chapman_found = False
-        # #endregion
 
         try:
             async for message in self.client.iter_messages(
@@ -142,24 +137,7 @@ class TelegramIndexer:
                 offset_date=to_date,
                 reverse=False,
             ):
-                # #region agent log
-                total_iterated += 1
-                # Check all text fields for chapman
-                msg_text = message.text or message.raw_text or message.message or ""
-                if 'chapman' in msg_text.lower():
-                    chapman_found = True
-                    logger.info(f"[DEBUG-a294c4] FOUND CHAPMAN! msg_id={message.id}, date={message.date}, has_media={message.media is not None}, text={msg_text[:200]}")
-                # Log skipped media messages with potential caption
-                if message.text is None and message.media is not None:
-                    raw = message.raw_text or message.message or ""
-                    if raw and 'chapman' in raw.lower():
-                        logger.info(f"[DEBUG-a294c4] SKIPPED MEDIA WITH CHAPMAN! msg_id={message.id}, raw_text={raw[:200]}")
-                # #endregion
-                
                 if message.text is None or len(message.text.strip()) == 0:
-                    # #region agent log
-                    skipped_no_text += 1
-                    # #endregion
                     continue
 
                 if from_date and message.date.replace(tzinfo=None) < from_date:
@@ -178,10 +156,6 @@ class TelegramIndexer:
                 })
 
             display = chat.display_name if isinstance(chat, ChatIdentifier) else str(chat)
-            # #region agent log
-            oldest_date = messages[-1]["date"] if messages else "N/A"
-            logger.info(f"[DEBUG-a294c4] fetch_messages stats: total_iterated={total_iterated}, skipped_no_text={skipped_no_text}, chapman_found={chapman_found}, oldest_msg_date={oldest_date}")
-            # #endregion
             logger.info(
                 f"Fetched {len(messages)} messages from {display} "
                 f"(from {from_date} to {to_date})"

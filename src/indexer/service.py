@@ -72,10 +72,6 @@ class IndexingService:
                         status, from_date, to_date
                     )
                     is_fresh = self.status_repo.is_cache_fresh(status, cache_minutes)
-                    # #region agent log
-                    logger.info(f"[DEBUG-a294c4] Chat {display_name} status: indexed_from={status.indexed_from_date if status else None}, indexed_until={status.indexed_until_date if status else None}, last_indexed={status.last_indexed_at if status else None}")
-                    logger.info(f"[DEBUG-a294c4] Chat {display_name} missing_ranges={missing_ranges}, is_fresh={is_fresh}, requested from_date={from_date}, to_date={to_date}")
-                    # #endregion
                     
                     if not missing_ranges and is_fresh:
                         logger.info(
@@ -113,9 +109,7 @@ class IndexingService:
         from_date = to_date - timedelta(days=days)
         
         if force:
-            # Force full reindex - use entire requested period
             missing_ranges = [(from_date, to_date)]
-            logger.info(f"[DEBUG-a294c4] FORCE reindex {display_name}: full period from {from_date} to {to_date}")
         else:
             status = await self.status_repo.get_status(chat_id)
             missing_ranges = self.status_repo.get_missing_ranges(status, from_date, to_date)

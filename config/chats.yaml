@@ -16,6 +16,6 @@ default_chats:
     name: "БАРАХОЛКА ТБИЛИСИ M & S"
 
 settings:
-  default_days: 7
-  max_days: 30
+  default_days: 14
+  max_days: 14
   index_cache_minutes: 60

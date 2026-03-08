@@ -24,13 +24,13 @@ def upgrade() -> None:
         DECLARE
             deleted_count INTEGER;
         BEGIN
-            DELETE FROM messages WHERE date < NOW() - INTERVAL '30 days';
+            DELETE FROM messages WHERE date < NOW() - INTERVAL '14 days';
             GET DIAGNOSTICS deleted_count = ROW_COUNT;
             RAISE NOTICE 'Deleted % old messages', deleted_count;
             
             UPDATE chat_index_status 
-            SET indexed_from_date = GREATEST(indexed_from_date, NOW() - INTERVAL '30 days')
-            WHERE indexed_from_date < NOW() - INTERVAL '30 days';
+            SET indexed_from_date = GREATEST(indexed_from_date, NOW() - INTERVAL '14 days')
+            WHERE indexed_from_date < NOW() - INTERVAL '14 days';
         END;
         $$ LANGUAGE plpgsql;
     """)

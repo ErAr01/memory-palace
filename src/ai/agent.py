@@ -9,10 +9,13 @@ from src.ai.embeddings import generate_embedding, get_openai_client
 from src.ai.parser import ParsedQuery, parse_user_query
 from src.config import ChatIdentifier, get_chats_config, get_settings
 from src.database.models import Message
-from src.database.repository import MessageRepository
+from src.database.repository import ChatIndexStatusRepository, MessageRepository
 from src.indexer.service import IndexingService
 
 logger = logging.getLogger(__name__)
+
+# Период индексации и поиска для custom чатов (не из config) — фиксирован, не задаётся пользователем
+CUSTOM_CHAT_DAYS = 14
 
 
 @dataclass
@@ -22,6 +25,8 @@ class SearchResult:
     formatted_response: str
     need_clarification: bool
     clarification_question: str | None
+    need_indexing: bool = False
+    chats_to_index: list[ChatIdentifier] | None = None
 
 
 FILTER_SYSTEM_PROMPT = """Ты - агент фильтрации объявлений о продаже.
@@ -90,6 +95,7 @@ class SearchAgent:
     def __init__(self, session: AsyncSession):
         self.session = session
         self.message_repo = MessageRepository(session)
+        self.status_repo = ChatIndexStatusRepository(session)
         self.indexing_service = IndexingService(session)
         self.config = get_chats_config()
         self.settings = get_settings()
@@ -98,6 +104,7 @@ class SearchAgent:
         self,
         user_message: str,
         conversation_context: list[dict] | None = None,
+        force_days: int | None = None,
     ) -> SearchResult:
         """
         Process user search request.
@@ -105,6 +112,7 @@ class SearchAgent:
         Args:
             user_message: User's search message.
             conversation_context: Previous messages for context.
+            force_days: If set, overrides parsed days (used for custom chats — always 14 days).
         
         Returns:
             SearchResult with found messages or clarification request.
@@ -120,43 +128,58 @@ class SearchAgent:
                 clarification_question=parsed.clarification_question,
             )
         
-        chats = parsed.chats or self.config.get_chat_identifiers()
-        # #region agent log
-        logger.info(f"[DEBUG-a294c4] Search params: search_query={parsed.search_query}, days={parsed.days}, chats={[c.display_name for c in chats]}")
-        # #endregion
+        default_chats = self.config.get_chat_identifiers()
+        requested_chats = parsed.chats
+        
+        if requested_chats:
+            default_identifiers = {c.identifier for c in default_chats}
+            custom_chats = [c for c in requested_chats if c.identifier not in default_identifiers]
+            
+            if custom_chats:
+                unindexed = await self._get_unindexed_custom_chats(custom_chats)
+                if unindexed:
+                    chat_names = ", ".join(f"@{c.display_name}" for c in unindexed)
+                    return SearchResult(
+                        success=False,
+                        messages=[],
+                        formatted_response="",
+                        need_clarification=False,
+                        clarification_question=None,
+                        need_indexing=True,
+                        chats_to_index=unindexed,
+                    )
+        
+        chats = requested_chats or default_chats
+        
+        # Для custom чатов период фиксирован (14 дней), пользователь не может его задать
+        has_custom_chats = requested_chats and any(
+            c.identifier not in {dc.identifier for dc in default_chats}
+            for c in requested_chats
+        )
+        if force_days is not None:
+            days = force_days
+        elif has_custom_chats:
+            days = CUSTOM_CHAT_DAYS
+        else:
+            days = parsed.days
         
         await self.indexing_service.index_chats(
             chats=chats,
-            days=parsed.days,
+            days=days,
             force=False,
         )
         
         messages = await self._search_messages(
             search_query=parsed.search_query,
             chats=chats,
-            days=parsed.days,
+            days=days,
         )
-        # #region agent log
-        logger.info(f"[DEBUG-a294c4] _search_messages returned {len(messages)} messages")
-        for m in messages[:10]:
-            logger.info(f"[DEBUG-a294c4] Message id={m.id}, chat={m.chat_username}, date={m.date}, text={m.text[:100] if m.text else 'None'}...")
-        # Search for "chapman" directly in DB
-        from sqlalchemy import select
-        from src.database.models import Message
-        chapman_result = await self.session.execute(
-            select(Message).where(Message.text.ilike('%chapman%'))
-        )
-        chapman_msgs = list(chapman_result.scalars().all())
-        logger.info(f"[DEBUG-a294c4] Direct DB search for 'chapman': found {len(chapman_msgs)} messages")
-        for cm in chapman_msgs[:5]:
-            logger.info(f"[DEBUG-a294c4] Chapman msg: id={cm.id}, chat={cm.chat_username}, date={cm.date}, text={cm.text[:100] if cm.text else 'None'}...")
-        # #endregion
         
         if not messages:
             return SearchResult(
                 success=True,
                 messages=[],
-                formatted_response=f"К сожалению, объявлений о продаже «{parsed.search_query}» не найдено за последние {parsed.days} дней.",
+                formatted_response=f"К сожалению, объявлений о продаже «{parsed.search_query}» не найдено за последние {days} дней.",
                 need_clarification=False,
                 clarification_question=None,
             )
@@ -188,6 +211,54 @@ class SearchAgent:
             clarification_question=None,
         )
 
+    async def _get_unindexed_custom_chats(
+        self,
+        chats: list[ChatIdentifier],
+    ) -> list[ChatIdentifier]:
+        """
+        Check which custom chats are not indexed.
+        
+        Returns list of chats that have never been indexed.
+        """
+        from src.indexer.client import get_indexer
+        indexer = get_indexer()
+        
+        unindexed = []
+        for chat in chats:
+            chat_id = await indexer.get_chat_id(chat)
+            if chat_id is None:
+                unindexed.append(chat)
+                continue
+            
+            status = await self.status_repo.get_status(chat_id)
+            if status is None:
+                unindexed.append(chat)
+        
+        return unindexed
+
+    async def index_custom_chats(
+        self,
+        chats: list[ChatIdentifier],
+        days: int = CUSTOM_CHAT_DAYS,
+    ) -> dict[str, int]:
+        """
+        Perform one-time full indexing of custom chats.
+        
+        Период всегда фиксирован (14 дней), пользователь не может его задать.
+        
+        Args:
+            chats: List of custom chats to index.
+            days: Number of days to index (default CUSTOM_CHAT_DAYS).
+        
+        Returns:
+            Dict mapping chat display name to number of messages indexed.
+        """
+        return await self.indexing_service.index_chats(
+            chats=chats,
+            days=days,
+            force=True,
+        )
+
     async def _search_messages(
         self,
         search_query: str,
@@ -212,18 +283,6 @@ class SearchAgent:
             if chat_id:
                 chat_ids.append(chat_id)
         
-        # #region agent log
-        logger.info(f"[DEBUG-a294c4] _search_messages: chat_ids={chat_ids}, from_date={from_date}")
-        # Check total messages in DB for first chat
-        if chat_ids:
-            from sqlalchemy import select, func
-            from src.database.models import Message
-            count_result = await self.session.execute(
-                select(func.count(Message.id)).where(Message.chat_id == chat_ids[0]).where(Message.date >= from_date)
-            )
-            total_count = count_result.scalar()
-            logger.info(f"[DEBUG-a294c4] Total messages in DB for chat_id={chat_ids[0]} since {from_date}: {total_count}")
-        # #endregion
         messages = await self.message_repo.search_similar(
             embedding=query_embedding,
             chat_ids=chat_ids if chat_ids else None,
@@ -265,9 +324,6 @@ class SearchAgent:
             
             result = json.loads(response.choices[0].message.content)
             relevant_ids = set(result.get("relevant_ids", []))
-            # #region agent log
-            logger.info(f"[DEBUG-a294c4] _filter_relevant_messages: input_ids={[m.id for m in messages]}, relevant_ids={relevant_ids}, summary={result.get('summary')}")
-            # #endregion
             
             return [m for m in messages if m.id in relevant_ids]
             
