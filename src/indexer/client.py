@@ -100,7 +100,7 @@ class TelegramIndexer:
         chat: ChatIdentifier | str | int,
         from_date: datetime | None = None,
         to_date: datetime | None = None,
-        limit: int = 5000,
+        limit: int = 10000,
     ) -> list[dict]:
         """
         Fetch messages from a chat within date range.
@@ -179,7 +179,8 @@ class TelegramIndexer:
 
             display = chat.display_name if isinstance(chat, ChatIdentifier) else str(chat)
             # #region agent log
-            logger.info(f"[DEBUG-a294c4] fetch_messages stats: total_iterated={total_iterated}, skipped_no_text={skipped_no_text}, chapman_found={chapman_found}")
+            oldest_date = messages[-1]["date"] if messages else "N/A"
+            logger.info(f"[DEBUG-a294c4] fetch_messages stats: total_iterated={total_iterated}, skipped_no_text={skipped_no_text}, chapman_found={chapman_found}, oldest_msg_date={oldest_date}")
             # #endregion
             logger.info(
                 f"Fetched {len(messages)} messages from {display} "
