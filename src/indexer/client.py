@@ -144,9 +144,16 @@ class TelegramIndexer:
             ):
                 # #region agent log
                 total_iterated += 1
-                if message.text and 'chapman' in message.text.lower():
+                # Check all text fields for chapman
+                msg_text = message.text or message.raw_text or message.message or ""
+                if 'chapman' in msg_text.lower():
                     chapman_found = True
-                    logger.info(f"[DEBUG-a294c4] FOUND CHAPMAN! msg_id={message.id}, date={message.date}, text={message.text[:200]}")
+                    logger.info(f"[DEBUG-a294c4] FOUND CHAPMAN! msg_id={message.id}, date={message.date}, has_media={message.media is not None}, text={msg_text[:200]}")
+                # Log skipped media messages with potential caption
+                if message.text is None and message.media is not None:
+                    raw = message.raw_text or message.message or ""
+                    if raw and 'chapman' in raw.lower():
+                        logger.info(f"[DEBUG-a294c4] SKIPPED MEDIA WITH CHAPMAN! msg_id={message.id}, raw_text={raw[:200]}")
                 # #endregion
                 
                 if message.text is None or len(message.text.strip()) == 0:
